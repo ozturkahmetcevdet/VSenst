@@ -29,5 +29,9 @@
 /*Information Image Headers*/
 /*WI-FI*/
 #include "gfx/WIFI_OFF.h"
+#include "gfx/WIFI_1.h"
+#include "gfx/WIFI_2.h"
+#include "gfx/WIFI_3.h"
+#include "gfx/WIFI_4.h"
 /*GPS*/
 #include "gfx/GPS_OFF.h"

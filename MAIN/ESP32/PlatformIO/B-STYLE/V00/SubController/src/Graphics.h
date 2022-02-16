@@ -44,10 +44,10 @@ class Graphics
     byte BATTERY_LastImage = 255;
     bool BATTERY_ImageProcess = false;
   public:
-    byte BATTERY_CurrentImage = 2;
+    byte BATTERY_CurrentImage = 1;
 
   private:    
-    const short unsigned int* WIFI_NameList[3] = {WIFI_OFF};
+    const short unsigned int* WIFI_NameList[5] = {WIFI_OFF, WIFI_1, WIFI_2, WIFI_3, WIFI_4};
     const uint16_t WIFI_Size[2] = {19, 19};
     const uint16_t WIFI_PositionXY[2] = {4, 4};
     byte WIFI_LastImage = 255;
