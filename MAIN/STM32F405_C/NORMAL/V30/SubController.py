@@ -1,0 +1,76 @@
+import gc
+from micropython import const
+from pyb import UART, Pin
+import machine
+import json
+import time
+
+SUB_COM_SPEED = const(2000000)
+SUB_COM_PORT  = const(3)
+
+class SUBCommand:
+    class Page:
+        Entry    = const(1)
+        Main     = const(2)
+        Bye      = const(3)
+        Alarm    = const(4)
+
+    class Ignition:
+        On       = const(1)
+        Off      = const(2)
+
+    class Record:
+        Default    = const(1) 
+        RecordMode = const(2) 
+        Services   = const(3) 
+
+    class LowPower:
+        Sleep    = const(0) 
+        WakeUp   = const(1) 
+
+class Sub(SUBCommand):
+    def __init__(self) -> None:
+        super().__init__()
+        self.RST  = Pin('B0', Pin.OUT_PP)
+        self.CTRL = Pin('B1', Pin.OUT_PP)
+        self.UART = UART(SUB_COM_PORT, SUB_COM_SPEED,  timeout=10, read_buf_len=1024)
+        self.Setup()
+
+    def Setup(self):
+        self.Reset()
+
+    def Reset(self):
+        self.CTRL.high()
+        self.RST.low()
+        time.sleep(0.01)
+        self.RST.high()
+
+    def Receive(self):
+        if self.UART.any():
+            data = self.UART.read()
+            if data != b'null':
+                print("\n\n-->")
+                print(data)
+        gc.collect()
+
+    def Process(self, buffer=None):
+        self.Receive()
+
+        answer = False
+        if buffer == None:
+            return None
+
+        if buffer['Refresh']:
+            try:
+                self.UART.write(json.dumps(buffer))
+                print(json.dumps(buffer))
+                answer = True
+            except OSError as err:
+                print("OS error: {0}".format(err))
+            except ValueError:
+                print("Could not send data over UART.")
+            except:
+                print("Unexpected error!")
+                raise
+
+        return answer

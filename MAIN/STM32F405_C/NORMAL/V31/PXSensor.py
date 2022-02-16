@@ -1,0 +1,276 @@
+import gc
+from micropython import const
+import binascii
+
+
+OPEN_SCENE_SHOW_TIME        = const(2500)
+CLOSING_TIME                = const(10000)
+CLOSE_SCENE_SHOW_TIME       = const(1000)
+PXHUB_ESTIMATED_LIFETIME    = const(1675) #day
+
+class T:
+    sSDV = const( 30)
+    sSNV = const(-15)
+    sSSV = const( 10)
+    dSDV = const( 60)
+    dSNV = const(-30)
+    dSSV = const( 20)
+    
+class key:
+    class px:
+        number              = 0
+        calibrationStatus   = 1
+        seatStatus          = 2
+        seatPolarity        = 3
+        cableStatus         = 4
+        beltStatus          = 5
+        beltPolarity        = 6
+        baseLine            = 7
+        currentValue        = 8
+        lastValue           = 9
+        safeValue           = 10
+        peakValue           = 11
+        currentThreshold    = 12
+        baseThreshold       = 13
+        negativeThreshold   = 14
+        beltCount           = 15
+        seatCount           = 16
+        cableErrorCount     = 17
+        calibrationCount    = 18
+    class hub:
+        idNumber            = 0
+        px1                 = 1
+        px2                 = 2
+        createTime          = 3
+        dataCount           = 5
+        resetCount          = 6
+        battery             = 7
+        lifeTime            = 8
+        doubleSeat          = 9
+        crcErrorCount       = 10
+        rssi                = 11
+
+
+class Px():
+    def __init__(self, seatNumber=int, calibrationStatus=bool, seatBeltPolarity=bool, baseLine=int, seatBeltCount=int, seatCount=int, cableErrorCount=int, calibrationCount=int, safeValue=int, threshold=int, negativeThreshold=int) -> None:
+        self.features = list()
+        self.features.append(seatNumber)                #key.px.number
+        self.features.append(int(calibrationStatus))    #key.px.calibrationStatus
+        self.features.append(0)                         #key.px.seatStatus
+        self.features.append(int(baseLine > 0))         #key.px.seatPolarity
+        self.features.append(1)                         #key.px.cableStatus
+        self.features.append(0)                         #key.px.beltStatus
+        self.features.append(int(seatBeltPolarity))     #key.px.beltPolarity
+        self.features.append(baseLine)                  #key.px.baseLine
+        self.features.append(baseLine)                  #key.px.currentValue
+        self.features.append(baseLine)                  #key.px.lastValue
+        self.features.append(safeValue)                 #key.px.safeValue
+        self.features.append(0)                         #key.px.peakValue
+        self.features.append(threshold)                 #key.px.currentThreshold
+        self.features.append(threshold)                 #key.px.baseThreshold
+        self.features.append(negativeThreshold)         #key.px.negativeThreshold
+        self.features.append(seatBeltCount)             #key.px.beltCount
+        self.features.append(seatCount)                 #key.px.seatCount
+        self.features.append(cableErrorCount)           #key.px.cableErrorCount
+        self.features.append(calibrationCount)          #key.px.calibrationCount
+        #have to be in order
+
+        self.referanceCounter = 0
+        self.referanceCounterLimit = 4
+
+        self.Calibration(calb=self.features[key.px.calibrationStatus], val=self.features[key.px.currentValue])
+    
+    def Calibration(self, calb, val):
+        self.features[key.px.currentValue] = val - self.features[key.px.baseLine]
+
+        calb |= val < (self.features[key.px.baseLine] >> 3)
+        
+        if calb:
+            self.features[key.px.calibrationCount] += 1 if self.features[key.px.calibrationStatus] == 0 else 0
+            self.features[key.px.calibrationStatus] = 1
+
+        if self.features[key.px.currentValue] < self.features[key.px.negativeThreshold]:
+            self.features[key.px.baseLine] = val
+            self.referanceCounter = 0
+            self.features[key.px.currentValue] = 0
+        elif self.features[key.px.calibrationStatus] == 0:
+            self.features[key.px.peakValue] = self.features[key.px.currentValue] if self.features[key.px.peakValue] < self.features[key.px.currentValue] else self.features[key.px.peakValue]
+            self.referanceCounter += 1 if self.referanceCounter < self.referanceCounterLimit else -self.referanceCounter
+            if self.referanceCounter > (self.referanceCounterLimit >> 2) and self.features[key.px.peakValue] < self.features[key.px.safeValue]:
+                self.features[key.px.baseLine] = val + self.features[key.px.safeValue]
+                self.features[key.px.currentValue] = 0
+            if self.referanceCounter == 0 and self.features[key.px.peakValue] < self.features[key.px.baseThreshold]:
+                self.features[key.px.baseLine] = val + self.features[key.px.peakValue]
+                self.features[key.px.currentValue] = 0
+            self.features[key.px.peakValue] = 0 if self.referanceCounter == 0 else self.features[key.px.peakValue]
+        else:
+            self.features[key.px.baseLine] = val if self.features[key.px.currentValue] >= (self.features[key.px.negativeThreshold] >> 2) else self.features[key.px.baseLine]
+            self.referanceCounter += 1 if self.features[key.px.currentValue] <= 0 and self.features[key.px.currentValue] >= self.features[key.px.negativeThreshold] else -self.referanceCounter
+            self.features[key.px.calibrationStatus] = 0 if self.referanceCounter > (self.referanceCounterLimit >> 2) else self.features[key.px.calibrationStatus]
+            self.referanceCounter = 0 if self.features[key.px.calibrationStatus] == 0 else self.referanceCounter
+        self.features[key.px.currentValue] = 0 if self.features[key.px.currentValue] < 0 or self.features[key.px.calibrationStatus] else self.features[key.px.currentValue]
+
+    def Update(self, actv, belt, cabl): 
+        if self.features[key.px.beltPolarity] != belt:
+            self.features[key.px.beltCount] += 1 if self.features[key.px.beltStatus] == 0 else 0
+            self.features[key.px.beltStatus] = 1
+        else:
+            self.features[key.px.beltStatus] = 0
+
+        if actv == 0:
+            self.features[key.px.seatStatus] = 0
+            return None
+
+        if cabl:
+            self.features[key.px.cableErrorCount] += 1 if self.features[key.px.cableStatus] == 0 else 0
+            self.features[key.px.cableStatus] = 1
+
+            if self.features[key.px.currentValue] >= self.features[key.px.currentThreshold]:
+                self.features[key.px.seatCount] += 1 if self.features[key.px.seatStatus] == 0 else 0
+                self.features[key.px.seatStatus] = 1
+            else:
+                self.features[key.px.seatStatus] = 0
+        else:
+            self.features[key.px.cableStatus] = 0
+            self.features[key.px.seatStatus] = 0
+
+
+class PxHub():
+    def __init__(self, data=None, sNo=int, json=dict(), dateTime=None) -> None:
+        self.px1 = None
+        self.px2 = None        
+        self.features = list()
+
+        self.resetCounterStatus = 0
+        self.calibrationRequest = 0
+
+        if json != dict():
+            self.SetupFromJson(json=json)
+        elif data != None:
+            self.SetupFromRFData(data=data, sNo=sNo, dateTime=dateTime)
+        else:
+            pass #errorhandler
+
+    def SetupFromRFData(self, data=None, sNo=int, dateTime=None):
+        doubleSeat = int(((data[3] >> 0) & 0x01) & ((data[3] >> 1) & 0x01))
+
+        self.features.append(data[:3]) 
+        if bool((data[3] >> 0) & 0x01):
+            self.px1 = Px(seatNumber=sNo, calibrationStatus=True, seatBeltPolarity=bool((data[3] >> 2) & 0x01), baseLine=int(((data[4] << 8) & 0xFF00) | ((data[5] << 0) & 0x00FF)), seatBeltCount=0, seatCount=0, cableErrorCount=0, calibrationCount=0, safeValue=(T.dSSV if doubleSeat else T.sSSV), threshold=(T.dSDV if doubleSeat else T.sSDV), negativeThreshold=(T.dSNV if doubleSeat else T.sSNV))
+            self.features.append(self.px1.features)
+            sNo += 1
+        else:
+            self.features.append([])
+        if bool((data[3] >> 1) & 0x01):
+            self.px2 = Px(seatNumber=sNo, calibrationStatus=True, seatBeltPolarity=bool((data[3] >> 3) & 0x01), baseLine=int(((data[6] << 8) & 0xFF00) | ((data[7] << 0) & 0x00FF)), seatBeltCount=0, seatCount=0, cableErrorCount=0, calibrationCount=0, safeValue=(T.dSSV if doubleSeat else T.sSSV), threshold=(T.dSDV if doubleSeat else T.sSDV), negativeThreshold=(T.dSNV if doubleSeat else T.sSNV))
+            self.features.append(self.px2.features)
+        else:
+            self.features.append([])
+
+        self.features.append(dateTime)
+        self.features.append(dateTime)
+        self.features.append(0)
+        self.features.append(0)
+        self.features.append(int((((data[3] >> 4) & 0x07) * 100) // 7))
+        self.features.append(int(PXHUB_ESTIMATED_LIFETIME // self.features[key.hub.battery])) #day
+        self.features.append(doubleSeat)
+        self.features.append(0)
+        self.features.append(-int(data[10] // 2))
+        #have to be in order
+
+    def SetupFromJson(self, json=dict()):  
+
+        self.features.append(str(json[key.hub.idNumber]).encode())
+        if json[key.hub.px1] != []:
+            self.px1 = Px(seatNumber=json[key.hub.px1][key.px.number], calibrationStatus=json[key.hub.px1][key.px.calibrationStatus], seatBeltPolarity=json[key.hub.px1][key.px.beltPolarity], baseLine=json[key.hub.px1][key.px.baseLine], seatBeltCount=json[key.hub.px1][key.px.beltCount], seatCount=json[key.hub.px1][key.px.seatCount], cableErrorCount=json[key.hub.px1][key.px.cableErrorCount], calibrationCount=json[key.hub.px1][key.px.calibrationCount], safeValue=(T.dSSV if json[key.hub.doubleSeat] else T.sSSV), threshold=(T.dSDV if json[key.hub.doubleSeat] else T.sSDV), negativeThreshold=(T.dSNV if json[key.hub.doubleSeat] else T.sSNV))
+            self.features.append(self.px1.features)
+        else:
+            self.features.append([])
+        if json[key.hub.px2] != []:
+            self.px2 = Px(seatNumber=json[key.hub.px2][key.px.number], calibrationStatus=json[key.hub.px2][key.px.calibrationStatus], seatBeltPolarity=json[key.hub.px2][key.px.beltPolarity], baseLine=json[key.hub.px2][key.px.baseLine], seatBeltCount=json[key.hub.px2][key.px.beltCount], seatCount=json[key.hub.px2][key.px.seatCount], cableErrorCount=json[key.hub.px2][key.px.cableErrorCount], calibrationCount=json[key.hub.px2][key.px.calibrationCount], safeValue=(T.dSSV if json[key.hub.doubleSeat] else T.sSSV), threshold=(T.dSDV if json[key.hub.doubleSeat] else T.sSDV), negativeThreshold=(T.dSNV if json[key.hub.doubleSeat] else T.sSNV))
+            self.features.append(self.px2.features)
+        else:
+            self.features.append([])
+
+        self.features.append(json[key.hub.createTime])
+        self.features.append(json[key.hub.dataCount])
+        self.features.append(json[key.hub.resetCount])
+        self.features.append(json[key.hub.battery])
+        self.features.append(json[key.hub.lifeTime])
+        self.features.append(json[key.hub.doubleSeat])
+        self.features.append(json[key.hub.crcErrorCount])
+        self.features.append(json[key.hub.rssi])
+
+    def Process(self, data=None):
+        if data == None:
+            return None
+        if data[:3] != self.features[key.hub.idNumber]:
+            return None
+
+        if bool(data[9] & 0x01):
+            if self.px1:
+                self.px1.Calibration(calb=self.calibrationRequest, val=int(((data[4] << 8) & 0xFF00) | ((data[5] << 0) & 0x00FF)))
+            if self.px2:
+                self.px2.Calibration(calb=self.calibrationRequest, val=int(((data[6] << 8) & 0xFF00) | ((data[7] << 0) & 0x00FF)))
+
+            self.features[key.hub.dataCount] += 1
+            self.features[key.hub.resetCount] += 1 if self.resetCounterStatus == False and bool((data[3] >> 7) & 0x01) else 0
+            self.resetCounterStatus = bool((data[3] >> 7) & 0x01)
+            self.features[key.hub.battery] = int((((data[3] >> 4) & 0x07)  * 100) // 7)
+            self.features[key.hub.lifeTime] = int((PXHUB_ESTIMATED_LIFETIME * 100) // self.features[key.hub.battery]) #day
+            self.features[key.hub.rssi] = -int(data[10] // 2)
+
+            self.Calibration()
+            
+            if self.px1:
+                self.px1.Update(actv=not self.px1.features[key.px.calibrationStatus], belt=(data[3] >> 2) & 0x01, cabl=(data[3] >> 0) & 0x01)
+            if self.px2:
+                self.px2.Update(actv=not self.px2.features[key.px.calibrationStatus], belt=(data[3] >> 3) & 0x01, cabl=(data[3] >> 1) & 0x01)
+
+            self.calibrationRequest = False
+        else:
+            self.features[key.hub.crcErrorCount] += 1
+            self.features[key.hub.rssi] = -(data[10] // 2)
+
+        return True
+
+    def Calibration(self):
+        if self.features[key.hub.doubleSeat]:
+            if self.px1.features[key.px.currentValue] > self.px2.features[key.px.currentValue] and self.px1.features[key.px.currentValue] > self.px1.features[key.px.baseThreshold]:
+                calc = int(self.px1.features[key.px.currentValue] * 0.4)
+                self.px1.features[key.px.currentThreshold] = calc if self.px1.features[key.px.currentThreshold] < calc else self.px1.features[key.px.currentThreshold]
+                self.px2.features[key.px.currentThreshold] = int(self.px1.features[key.px.currentThreshold] * 2)
+                
+            elif self.px2.features[key.px.currentValue] > self.px1.features[key.px.currentValue] and self.px2.features[key.px.currentValue] > self.px2.features[key.px.baseThreshold]:
+                calc = int(self.px2.features[key.px.currentValue] * 0.4)
+                self.px2.features[key.px.currentThreshold] = calc if self.px2.features[key.px.currentThreshold] < calc else self.px2.features[key.px.currentThreshold]
+                self.px1.features[key.px.currentThreshold] = int(self.px2.features[key.px.currentThreshold] * 2)
+
+            self.px1.features[key.px.currentThreshold] = self.px1.features[key.px.baseThreshold] if self.px1.features[key.px.currentThreshold] < self.px1.features[key.px.baseThreshold] else self.px1.features[key.px.currentThreshold]
+            self.px2.features[key.px.currentThreshold] = self.px2.features[key.px.baseThreshold] if self.px2.features[key.px.currentThreshold] < self.px2.features[key.px.baseThreshold] else self.px2.features[key.px.currentThreshold]
+
+            if (self.px1.features[key.px.currentThreshold] != self.px1.features[key.px.baseThreshold] and self.px1.features[key.px.currentValue] < self.px1.features[key.px.currentThreshold]) and \
+               (self.px2.features[key.px.currentThreshold] != self.px2.features[key.px.baseThreshold] and self.px2.features[key.px.currentValue] < self.px2.features[key.px.currentThreshold]):
+                self.px1.features[key.px.baseLine] += self.px1.features[key.px.currentValue]
+                self.px1.features[key.px.currentValue] = 0
+                self.px2.features[key.px.baseLine] += self.px2.features[key.px.currentValue]
+                self.px2.features[key.px.currentValue] = 0
+                
+            if (self.px1.features[key.px.currentValue] < self.px1.features[key.px.baseThreshold]) and \
+               (self.px2.features[key.px.currentValue] < self.px2.features[key.px.baseThreshold]):
+                self.px1.features[key.px.currentThreshold] = self.px1.features[key.px.baseThreshold]
+                self.px2.features[key.px.currentThreshold] = self.px2.features[key.px.baseThreshold]
+        else:
+            pxInstance = self.px1 if self.px1 else self.px2
+            if pxInstance.features[key.px.currentValue] > pxInstance.features[key.px.baseThreshold]:
+                calc = int(pxInstance.features[key.px.currentValue] * 0.4)
+                pxInstance.features[key.px.currentThreshold] = calc if pxInstance.features[key.px.currentThreshold] < calc else pxInstance.features[key.px.currentThreshold]
+
+            pxInstance.features[key.px.currentThreshold] = pxInstance.features[key.px.baseThreshold] if pxInstance.features[key.px.currentThreshold] < pxInstance.features[key.px.baseThreshold] else pxInstance.features[key.px.currentThreshold]
+                
+            if pxInstance.features[key.px.currentThreshold] != pxInstance.features[key.px.baseThreshold] and pxInstance.features[key.px.currentValue] < pxInstance.features[key.px.currentThreshold]:
+                pxInstance.features[key.px.baseLine] += pxInstance.features[key.px.currentValue]
+                pxInstance.features[key.px.currentValue] = 0
+            
+            if pxInstance.features[key.px.currentValue] < pxInstance.features[key.px.baseThreshold]:
+                pxInstance.features[key.px.currentThreshold] = pxInstance.features[key.px.baseThreshold]

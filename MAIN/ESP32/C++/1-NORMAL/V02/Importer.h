@@ -1,0 +1,52 @@
+/*Page Images Header*/
+#include "gfx/Page_0.h"
+#include "gfx/Page_0_1.h"
+#include "gfx/Page_1.h"
+#include "gfx/Page_Alarm.h"
+#include "gfx/Page_Bye.h"
+
+/*Counter Images Headers*/
+#include "gfx/C0.h"
+#include "gfx/C1.h"
+#include "gfx/C2.h"
+#include "gfx/C3.h"
+#include "gfx/C4.h"
+#include "gfx/C5.h"
+#include "gfx/C6.h"
+#include "gfx/C7.h"
+#include "gfx/C8.h"
+#include "gfx/C9.h"
+#include "gfx/C10.h"
+#include "gfx/C11.h"
+#include "gfx/C12.h"
+#include "gfx/C13.h"
+#include "gfx/C14.h"
+#include "gfx/C15.h"
+#include "gfx/C16.h"
+#include "gfx/C17.h"
+#include "gfx/C18.h"
+#include "gfx/C19.h"
+#include "gfx/C20.h"
+#include "gfx/C21.h"
+#include "gfx/C22.h"
+#include "gfx/C23.h"
+#include "gfx/C24.h"
+#include "gfx/C25.h"
+
+/*Mode Images Headers*/
+#include "gfx/Mode_Null.h"
+#include "gfx/Mode_Record.h"
+#include "gfx/Mode_Service.h"
+
+/*Seat Images Headers*/
+#include "gfx/Seat_Fault.h"
+#include "gfx/Seat_Ok.h"
+#include "gfx/Seat_Red.h"
+#include "gfx/Seat_Green.h"
+#include "gfx/Seat_Yellow.h"
+#include "gfx/Seat_Registered.h"
+#include "gfx/Seat_Unregistered.h"
+
+/*Ignition Images Headers*/
+#include "gfx/Ignition_Off.h"
+#include "gfx/Ignition_On.h"
