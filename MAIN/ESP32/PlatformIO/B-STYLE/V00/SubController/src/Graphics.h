@@ -1,17 +1,23 @@
 #include "Importer.h"
 #include <TFT_eSPI.h>  
-
-#define TOUCH_CS_PIN  14
-#define TOUCH_IRQ_PIN 27  
+#include <EEPROM.h>
 
 #define SEAT_MAX_NUMBER 24
+#define EEPROM_SIZE 24
+#define EEPROM_CALB_ADDRESS 0x00
 
 class Graphics
 { 
   private:    
+    #if B_STYLE == (1)
     const short unsigned int* PAGE_NameList[3] = {P0, SUB, PBYE};
     const uint16_t PAGE_Size[3][2] = {{150, 232}, {240, 29}, {82, 27}};
     const uint16_t PAGE_PositionXY[3][2] = {{45, 44}, {0, 0}, {79, 146}};
+    #else
+    const short unsigned int* PAGE_NameList[3] = {VELDO_P0, SUB, PBYE};
+    const uint16_t PAGE_Size[3][2] = {{172, 80}, {240, 29}, {82, 27}};
+    const uint16_t PAGE_PositionXY[3][2] = {{34, 120}, {0, 0}, {79, 146}};
+    #endif
     byte PAGE_LastImage = 255;
     bool PAGE_ImageProcess = false;
   public:
@@ -54,6 +60,7 @@ class Graphics
     bool WIFI_ImageProcess = false;
   public:
     byte WIFI_CurrentImage = 1;
+    bool WIFI_TouchActivity = false;
 
   private:    
     const short unsigned int* GPS_NameList[3] = {GPS_OFF};
@@ -77,14 +84,16 @@ class Graphics
     void Init(void);
     void Loop(bool enable);
     void Backlight(bool enable);
+    void Clear(const uint16_t* position, const uint16_t* size, uint16_t color);
+    void Text(String txt, const uint16_t* position, uint16_t txtColor, uint16_t backColor);
 
   private:
-    inline void SetBitmap(int x, int y, int width, int height, const short unsigned int* image, bool imageProcess)
+    inline void SetBitmap(const short unsigned int* xy, const short unsigned int* wh, const short unsigned int* image, bool imageProcess)
     {
       if(!imageProcess)
         return;
         
-      this->gfxLcd.pushImage(x, y, width, height, image);
+      this->gfxLcd.pushImage(xy[0], xy[1], wh[0], wh[1], image);
     }
     
     inline void BufferCheck()
@@ -128,5 +137,80 @@ class Graphics
 
       this->GPS_ImageProcess = this->GPS_CurrentImage != this->GPS_LastImage && this-GPS_LastImage != 0;
       this->GPS_LastImage = this->GPS_LastImage != 0 ? this->GPS_CurrentImage : this->GPS_LastImage;
+    }
+
+    void TouchCalibrate()
+    {
+      uint16_t calData[5];
+
+      this->ReadIntArrayFromEEPROM(EEPROM_CALB_ADDRESS, calData, 5);
+      //Serial.println("EEPROM Calibration data:");
+      //Serial.println(calData[4]);
+      //Serial.println();
+      if(calData[4] != 0xFFFF)
+      {
+        this->gfxLcd.setTouch(calData);
+        //Serial.println("EEPROM Calibration complete!");
+        return;
+      }
+
+      // Calibrate
+      this->gfxLcd.fillScreen(TFT_BLACK);
+      this->gfxLcd.setCursor(20, 0);
+      this->gfxLcd.setTextFont(2);
+      this->gfxLcd.setTextSize(1);
+      this->gfxLcd.setTextColor(TFT_WHITE, TFT_BLACK);
+
+      this->gfxLcd.println("Touch corners as indicated");
+
+      this->gfxLcd.setTextFont(1);
+      this->gfxLcd.println();
+
+      this->gfxLcd.calibrateTouch(calData, TFT_MAGENTA, TFT_BLACK, 15);
+
+      Serial.println(); Serial.println();
+      Serial.println("// Use this calibration code in setup():");
+      Serial.print("  uint16_t calData[5] = ");
+      Serial.print("{ ");
+
+      for (uint8_t i = 0; i < 5; i++)
+      {
+        Serial.print(calData[i]);
+        if (i < 4) Serial.print(", ");
+      }
+
+      Serial.println(" };");
+      Serial.print("  tft.setTouch(calData);");
+      Serial.println(); Serial.println();
+
+      this->gfxLcd.fillScreen(TFT_BLACK);
+      
+      this->gfxLcd.setTextColor(TFT_GREEN, TFT_BLACK);
+      this->gfxLcd.println("Calibration complete!");
+      this->gfxLcd.println("Calibration code sent to Serial port.");
+
+      this->WriteIntArrayIntoEEPROM(EEPROM_CALB_ADDRESS, calData, 5);
+
+      delay(4000);
+    }
+
+    void WriteIntArrayIntoEEPROM(uint16_t address, uint16_t* numbers, uint16_t arraySize)
+    {
+      int addressIndex = address;
+      for (int i = 0; i < arraySize; i++) 
+      {
+        EEPROM.writeUShort(addressIndex, numbers[i]);
+        addressIndex += sizeof(uint16_t);
+      }
+      EEPROM.commit();
+    }
+    void ReadIntArrayFromEEPROM(uint16_t address, uint16_t* numbers, uint16_t arraySize)
+    {
+      int addressIndex = address;
+      for (int i = 0; i < arraySize; i++)
+      {
+        numbers[i] = EEPROM.readUShort(addressIndex);
+        addressIndex += sizeof(uint16_t);
+      }
     }
 };

@@ -1,5 +1,11 @@
+
+#define B_STYLE (0)
 /*Page Image Header*/
+#if B_STYLE == (1)
 #include "gfx/P0.h"
+#else
+#include "gfx/VELDO_P0.h"
+#endif
 #include "gfx/SUB.h"
 #include "gfx/PBYE.h"
 

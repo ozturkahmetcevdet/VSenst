@@ -6,6 +6,7 @@ StaticJsonDocument<20480> jsonBuffer, doc;
 void SerialInit()
 {
   Serial.setRxBufferSize(16384);
-  Serial.begin(2000000);//921600
+  Serial.setTimeout(1);
+  Serial.begin(921600);//921600
   while(!Serial);
 }

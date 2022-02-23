@@ -45,17 +45,38 @@ void setup(void)
   SerialInit();
   graphics.Init();
   //graphics.Backlight(true);
-  //xTaskCreatePinnedToCore(&TaskSerial  , "SER_task", 1536, NULL, 1, NULL, 0);  
+  xTaskCreatePinnedToCore(&TaskSerial  , "SER_task", 9216, NULL, 1, NULL, 0);  
 
   SetDeviceUniqId();
   StartWifiManager();
+
+  delay(250);
+  Serial.println("BOOT");
+  delay(250);
 }
 
 void loop()
 {
-  TaskSerial();
+  //TaskSerial();
   graphics.Loop(graphics.ImageProcess);
   TimerLoop();
+  vTaskDelay(50);
+}
+
+void TouchActivity()
+{
+  if(graphics.WIFI_TouchActivity)
+  {
+    ResetWifiManager();
+    /*Serial.println("uOTA start");
+    delay(10);
+    Serial.println("FName@test.py");
+    delay(10);
+    Serial.print("import utime\r\n\r\ndef foo():\r\n\treturn str(foo())\r\n\r\ndef test():\r\n\ta = 3\r\n\tb = 5\r\n\treturn a + b");
+    delay(10);
+    Serial.println("uOTA end");*/
+    graphics.WIFI_TouchActivity = false;
+  }
 }
 
 void TimerLoop()
@@ -64,6 +85,7 @@ void TimerLoop()
   if(Timer.base - Timer.ms_100 > Timer._ms_100)
   {
     Timer.ms_100 = Timer.base;
+    TouchActivity();
   }
   if(Timer.base - Timer.ms_500 > Timer._ms_500)
   {
@@ -105,6 +127,9 @@ void SetDeviceUniqId()
 void StartWifiManager()
 {
   wifiManager = new ESP_WiFiManager(DEVICE_ID);
+  //wifiManager->resetSettings();
+  //wifiManager->autoConnect(DEVICE_ID);
+
   WiFi.begin();
   if (WiFi.psk() != "" && WiFi.psk() != "0")
   {
@@ -129,36 +154,37 @@ void StartWifiManager()
   else
   {
     Serial.println("No previous credentials detected. Continuing in offline mode");
-    ResetWifiManager();
   }
-
-  //WiFi.begin("AhmetsPhone", "ahmet123");
 
   ReadAndShowRssiStrength();
 }
 
 void ResetWifiManager()
 {
+  graphics.WIFI_CurrentImage = 1;
   wifiManager->resetSettings();
   wifiManager->setTimeout(180);
+  const uint16_t txtPos[2] = {4, 32};
+  const uint16_t clrSze[2] = {232, 12};
+  graphics.Clear(txtPos, clrSze, TFT_BLACK);
+  graphics.Text("SSID: " + String(DEVICE_ID), txtPos, TFT_GREEN, TFT_BLACK);
 
   Serial.println(F("\nCleared wifi configuration. Starting configuration portal."));
 
   wifiManager->startConfigPortal(DEVICE_ID);
-  unsigned long timeOut = 60;
-  while(WiFi.status() != WL_CONNECTED && timeOut)
-  {
-    delay(50);
-    timeOut--;
-  }
   if (WiFi.status() == WL_CONNECTED)
   {
+    graphics.Clear(txtPos, clrSze, TFT_BLACK);
     Serial.print(F("\nConnected. Local IP: "));
     Serial.println(WiFi.localIP());
   }
   else
   {
+    graphics.Clear(txtPos, clrSze, TFT_BLACK);
+    graphics.Text(wifiManager->getStatus(WiFi.status()), txtPos, TFT_YELLOW, TFT_BLACK);
     Serial.println(wifiManager->getStatus(WiFi.status()));
+    delay(1000);
+    graphics.Clear(txtPos, clrSze, TFT_BLACK);
   }
   ReadAndShowRssiStrength();
 }

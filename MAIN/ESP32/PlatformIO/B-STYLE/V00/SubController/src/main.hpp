@@ -1,6 +1,7 @@
 #include <Arduino.h>
 
 void TimerLoop(void);
+void TouchActivity(void);
 void SetDeviceUniqId(void);
 void StartWifiManager(void);
 void ResetWifiManager(void);
